@@ -3,96 +3,101 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>游泳出發反應時間測試</title>
+    <title>專業游泳出發測驗</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes pulse-green {
+            0%, 100% { background-color: #1e293b; }
+            50% { background-color: #065f46; }
+        }
+        .flash-on-go { animation: pulse-green 0.5s ease-out; }
+    </style>
 </head>
-<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen">
+<body id="body" class="bg-slate-900 text-white min-h-screen flex flex-col items-center justify-center p-6 transition-colors duration-200">
 
-    <div class="text-center p-6 bg-gray-800 rounded-xl shadow-xl w-full max-w-sm">
-        <h1 class="text-2xl font-bold mb-6">出發反應測試</h1>
-        <div id="status" class="text-xl mb-4 text-blue-400 font-mono">準備就緒</div>
-        <div id="timer" class="text-5xl font-bold mb-8">0.000 秒</div>
-        
-        <button id="startBtn" class="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-lg text-lg font-bold transition">
+    <div class="w-full max-w-sm bg-slate-800 p-8 rounded-[2rem] shadow-2xl border border-slate-700 text-center">
+        <div id="status" class="text-xs font-bold uppercase tracking-[0.2em] text-slate-400 mb-4">待機中</div>
+        <div id="timer" class="text-[5rem] leading-none font-mono font-black mb-8 text-white">0.000</div>
+        <button id="startBtn" class="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 active:scale-[0.98] transition-all py-6 rounded-2xl text-xl font-bold shadow-lg shadow-blue-900/40">
             開始訓練
         </button>
     </div>
 
-    <!-- 請確保你的 MP3 檔案名稱為 take_your_marks_beep.mp3 且與此檔案放在同一個目錄 -->
     <audio id="marksAudio" src="take_your_marks_beep.mp3"></audio>
+    <audio id="startAudio" src="swim-start-buzzer-sound.mp3"></audio>
 
     <script>
-        let startTime;
+        let startTime, audioCtx, gainNode;
         let isMeasuring = false;
-        const THRESHOLD = 15; // 震動靈敏度閾值
-
+        const THRESHOLD = 10;
         const startBtn = document.getElementById('startBtn');
         const statusDiv = document.getElementById('status');
         const timerDiv = document.getElementById('timer');
+        const body = document.getElementById('body');
         const marksAudio = document.getElementById('marksAudio');
+        const startAudio = document.getElementById('startAudio');
 
-        // 請求 iOS 權限
+        // 初始化音訊環境
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioCtx.createMediaElementSource(startAudio);
+                gainNode = audioCtx.createGain();
+                gainNode.gain.value = 3.0; // 放大 2 倍音量
+                source.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+            }
+        }
+
+        function updateStatus(text, colorClass) {
+            statusDiv.innerText = text;
+            statusDiv.className = `text-xs font-bold uppercase tracking-[0.2em] mb-4 ${colorClass}`;
+        }
+
         async function requestPermissions() {
             if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
                 try {
                     const response = await DeviceMotionEvent.requestPermission();
-                    if (response !== 'granted') {
-                        alert("請授予感測器權限以進行測試");
-                        return false;
-                    }
-                } catch (e) {
-                    console.error(e);
-                    return false;
-                }
+                    return response === 'granted';
+                } catch (e) { return false; }
             }
             return true;
         }
 
-        function playBeep() {
-            // 使用 AudioContext 產生 0.5s 的嗶聲
-            const context = new (window.AudioContext || window.webkitAudioContext)();
-            const oscillator = context.createOscillator();
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(880, context.currentTime);
-            oscillator.connect(context.destination);
-            oscillator.start();
-            oscillator.stop(context.currentTime + 0.5); // 嗶聲長度增加至 0.5 秒
-            
+        function playStartBuzzer() {
+            initAudio();
+            startAudio.play();
             startTime = Date.now();
             isMeasuring = true;
-            statusDiv.innerText = "出發！";
+            body.classList.add('flash-on-go');
+            updateStatus("出發！", "text-emerald-400");
+            setTimeout(() => body.classList.remove('flash-on-go'), 500);
         }
 
         startBtn.addEventListener('click', async () => {
-            const granted = await requestPermissions();
-            if (!granted) return;
-
-            // 1. 播放你的音訊檔
+            if (!(await requestPermissions())) { alert("請授予感測器權限"); return; }
+            initAudio();
             marksAudio.play();
-            statusDiv.innerText = "Take your marks";
             startBtn.disabled = true;
-            timerDiv.innerText = "0.000 秒";
-            isMeasuring = false;
+            startBtn.classList.add('opacity-50');
+            updateStatus("Take your marks...", "text-yellow-400");
+            timerDiv.innerText = "0.000";
 
-            // 2. 隨機延遲 1.5 - 2.5 秒
-            const delay = Math.random() * 1000 + 1500;
-            setTimeout(playBeep, delay);
+            setTimeout(playStartBuzzer, Math.random() * 2000 + 1500);
         });
 
-        // 偵測震動
         window.addEventListener('devicemotion', (event) => {
             if (!isMeasuring) return;
-
             const acc = event.accelerationIncludingGravity;
             const magnitude = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
 
-            // 當檢測到重力加速度劇烈變化
             if (magnitude > THRESHOLD) {
                 const reactionTime = (Date.now() - startTime) / 1000;
-                timerDiv.innerText = reactionTime.toFixed(3) + " 秒";
-                statusDiv.innerText = "測試完成";
+                timerDiv.innerText = reactionTime.toFixed(3);
+                updateStatus("測試完成", "text-blue-400");
                 isMeasuring = false;
                 startBtn.disabled = false;
+                startBtn.classList.remove('opacity-50');
             }
         });
     </script>
